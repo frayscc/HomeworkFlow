@@ -10,5 +10,5 @@ def test_frozen_data_is_stored_beside_the_program():
     )
     mac_exe = Path("/Applications/HomeworkFlow.app/Contents/MacOS/HomeworkFlow")
     assert _default_data_dir(frozen=True, platform="darwin", executable=mac_exe) == (
-        Path("/Applications/HomeworkFlow-data")
+        mac_exe.resolve().parents[3] / "HomeworkFlow-data"
     )
