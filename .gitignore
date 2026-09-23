@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+var/
+output/*
+!output/.gitkeep
+*.xlsx
+*.xls
+*.pdf
+*.zip
+.DS_Store

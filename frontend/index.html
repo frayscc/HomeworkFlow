@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HomeworkFlow 作业周表</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; background: #f4f6fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 32px)); margin: 36px auto; }
+    header { margin-bottom: 22px; }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    header p { margin: 0; color: #5b6475; }
+    .card { background: white; border: 1px solid #dde2eb; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(28, 39, 60, .06); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    label, legend { display: block; font-size: 14px; font-weight: 650; margin-bottom: 7px; }
+    input[type="text"], input[type="date"], input[type="number"], input[type="file"], textarea { width: 100%; min-height: 42px; border: 1px solid #cbd2de; border-radius: 9px; padding: 9px 11px; font: inherit; background: white; }
+    textarea { min-height: 180px; resize: vertical; line-height: 1.6; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .hint { margin:7px 0 0; color:#687386; font-size:13px; }
+    fieldset { border: 0; margin: 22px 0; padding: 0; }
+    .subjects { display: flex; flex-wrap: wrap; gap: 10px; }
+    .subject { border: 1px solid #cbd2de; border-radius: 999px; padding: 8px 12px; font-size: 14px; font-weight: 500; }
+    .subject input { margin-right: 6px; }
+    .row { display: flex; gap: 12px; align-items: center; margin-top: 18px; }
+    button { min-height: 42px; border: 0; border-radius: 9px; padding: 0 17px; font: inherit; font-weight: 700; cursor: pointer; }
+    .primary { background: #2457d6; color: white; }
+    .secondary { background: #e9edf5; color: #263044; }
+    button:disabled { opacity: .55; cursor: wait; }
+    #status { min-height: 24px; margin-top: 16px; color: #4e586a; }
+    #preview { margin-top: 14px; padding: 12px 14px; background: #f6f8fc; border-radius: 9px; display: none; }
+    #scanResult { margin-top: 14px; white-space: pre-wrap; line-height: 1.7; }
+    .week { padding: 14px 0; border-top: 1px solid #e4e8ef; }
+    .week:first-child { border-top: 0; }
+    .review { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; padding:10px 0; border-top:1px solid #edf0f5; }
+    .review img { width:92px; height:92px; object-fit:contain; border:1px solid #cbd2de; border-radius:8px; background:white; image-rendering:auto; }
+    .review button { min-height:34px; padding:0 11px; margin-left:6px; }
+    .full { grid-column: 1 / -1; }
+    @media (max-width: 680px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>HomeworkFlow</h1>
+    <p>生成一周使用的 A4 双 A5 作业统计纸表。</p>
+  </header>
+  <form id="generator" class="card">
+    <div class="grid">
+      <div class="full">
+        <label for="roster">学生名单</label>
+        <textarea id="roster" name="roster_text" placeholder="01 张三&#10;02 李四" required></textarea>
+        <p class="hint">每行一名学生，学号与姓名之间可使用空格、多个空格或从 Excel 两列复制出来的 Tab。</p>
+        <button type="button" id="previewRoster" class="secondary" style="margin-top:10px">检查名单</button>
+        <div id="preview"></div>
+      </div>
+      <div>
+        <label for="className">班级</label>
+        <input id="className" name="class_name" type="text" placeholder="例如：初二（3）班" required />
+      </div>
+      <div>
+        <label for="copies">每个学科份数</label>
+        <input id="copies" name="copies" type="number" min="1" max="5" value="1" />
+      </div>
+      <div>
+        <label for="start">开始日期</label>
+        <input id="start" name="start_date" type="date" required />
+      </div>
+      <div>
+        <label for="end">结束日期</label>
+        <input id="end" name="end_date" type="date" required />
+      </div>
+    </div>
+    <div class="row">
+      <button type="button" id="nextWeek" class="secondary">选择下周一至周五</button>
+      <label style="margin:0;font-weight:500"><input id="weekdays" name="weekdays_only" type="checkbox" checked /> 排除周六、周日</label>
+    </div>
+    <fieldset>
+      <legend>学科</legend>
+      <div id="subjects" class="subjects"></div>
+    </fieldset>
+    <button id="submit" class="primary" type="submit">生成并下载 PDF</button>
+    <div id="status" role="status"></div>
+  </form>
+  <section class="card" style="margin-top:20px">
+    <h2 style="margin-top:0">扫描识别</h2>
+    <p style="color:#5b6475">导入本机已签发批次的 A4/A5 PDF 或扫描图片。系统会读取二维码、校正定位点并分类所有方框。</p>
+    <label for="scanFile">扫描件</label>
+    <input id="scanFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" />
+    <button id="analyzeScan" class="secondary" type="button" style="margin-top:14px">分析扫描件</button>
+    <div id="scanResult" role="status"></div>
+  </section>
+  <section class="card" style="margin-top:20px">
+    <div class="row" style="justify-content:space-between;margin-top:0">
+      <h2 style="margin:0">周批次与人工复核</h2>
+      <button id="refreshWeeks" class="secondary" type="button">刷新</button>
+    </div>
+    <label for="platformTemplate" style="margin-top:16px">平台导入模板（可选，读取第一行列名）</label>
+    <input id="platformTemplate" type="file" accept=".xlsx" />
+    <div id="weeks" style="margin-top:14px;color:#4e586a">正在读取批次…</div>
+    <div id="reviews"></div>
+  </section>
+</main>
+<script>
+  const form = document.querySelector('#generator');
+  const roster = document.querySelector('#roster');
+  const preview = document.querySelector('#preview');
+  const className = document.querySelector('#className');
+  const status = document.querySelector('#status');
+  const submit = document.querySelector('#submit');
+  const weeksElement = document.querySelector('#weeks');
+  const reviewsElement = document.querySelector('#reviews');
+
+  const localDate = date => {
+    const copy = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return copy.toISOString().slice(0, 10);
+  };
+  const chooseNextWeek = () => {
+    const now = new Date();
+    const daysToMonday = ((8 - now.getDay()) % 7) || 7;
+    const monday = new Date(now); monday.setDate(now.getDate() + daysToMonday);
+    const friday = new Date(monday); friday.setDate(monday.getDate() + 4);
+    document.querySelector('#start').value = localDate(monday);
+    document.querySelector('#end').value = localDate(friday);
+  };
+  document.querySelector('#nextWeek').addEventListener('click', chooseNextWeek);
+  chooseNextWeek();
+
+  fetch('/api/config').then(response => response.json()).then(config => {
+    document.querySelector('#subjects').innerHTML = config.subjects.map(subject =>
+      `<label class="subject"><input type="checkbox" value="${subject}" checked />${subject}</label>`
+    ).join('');
+  });
+
+  document.querySelector('#previewRoster').addEventListener('click', async () => {
+    if (!roster.value.trim()) { status.textContent = '请先粘贴学生名单。'; return; }
+    const data = new FormData();
+    data.append('roster_text', roster.value);
+    data.append('class_name', className.value);
+    status.textContent = '正在读取花名册…';
+    const response = await fetch('/api/roster/preview', { method: 'POST', body: data });
+    const body = await response.json();
+    if (!response.ok) { status.textContent = body.detail || '花名册读取失败'; return; }
+    preview.style.display = 'block';
+    preview.textContent = `格式正确，共 ${body.student_count} 人。学号范围：${body.students[0].number} - ${body.students.at(-1).number}`;
+    status.textContent = '';
+  });
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const selected = [...document.querySelectorAll('#subjects input:checked')].map(item => item.value);
+    if (!selected.length) { status.textContent = '请至少选择一个学科。'; return; }
+    const data = new FormData(form);
+    data.set('subjects', JSON.stringify(selected));
+    data.set('weekdays_only', document.querySelector('#weekdays').checked ? 'true' : 'false');
+    submit.disabled = true; status.textContent = '正在生成 PDF…';
+    try {
+      const response = await fetch('/api/forms/generate', { method: 'POST', body: data });
+      if (!response.ok) { const body = await response.json(); throw new Error(body.detail || '生成失败'); }
+      const blob = await response.blob();
+      const disposition = response.headers.get('content-disposition') || '';
+      const manifestName = response.headers.get('x-homeworkflow-manifest');
+      const match = disposition.match(/filename\*=utf-8''([^;]+)/i);
+      const filename = match ? decodeURIComponent(match[1]) : '作业周表.pdf';
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      if (manifestName) {
+        const manifestResponse = await fetch(`/api/manifests/${encodeURIComponent(decodeURIComponent(manifestName))}`);
+        if (manifestResponse.ok) {
+          const manifestUrl = URL.createObjectURL(await manifestResponse.blob());
+          const manifestLink = document.createElement('a');
+          manifestLink.href = manifestUrl; manifestLink.download = decodeURIComponent(manifestName); manifestLink.click();
+          setTimeout(() => URL.revokeObjectURL(manifestUrl), 1000);
+        }
+      }
+      status.textContent = 'PDF 与 manifest 已生成。请按 100% / 实际大小打印。';
+      await loadWeeks();
+    } catch (error) { status.textContent = error.message; }
+    finally { submit.disabled = false; }
+  });
+
+  document.querySelector('#analyzeScan').addEventListener('click', async event => {
+    const input = document.querySelector('#scanFile');
+    const output = document.querySelector('#scanResult');
+    if (!input.files[0]) { output.textContent = '请选择扫描件。'; return; }
+    event.currentTarget.disabled = true; output.textContent = '正在拆分、定位和识别…';
+    try {
+      const data = new FormData(); data.append('scan_file', input.files[0]);
+      const response = await fetch('/api/scans/analyze', { method: 'POST', body: data });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || '扫描识别失败');
+      output.textContent = body.forms.map(item => item.error
+        ? `第 ${item.source_part} 张：${item.error}`
+        : `${item.subject}（第 ${item.copy_index} 份）：空白 ${item.counts.blank}，/ ${item.counts.slash_forward}，\\ ${item.counts.slash_back}，X ${item.counts.x}，待复核 ${item.counts.review}`
+      ).join('\n');
+      await loadWeeks();
+    } catch (error) { output.textContent = error.message; }
+    finally { event.currentTarget.disabled = false; }
+  });
+
+  async function loadWeeks() {
+    try {
+      const body = await fetch('/api/weeks').then(response => response.json());
+      if (!body.weeks.length) { weeksElement.textContent = '尚未签发周批次。'; return; }
+      weeksElement.innerHTML = body.weeks.map(week => `<div class="week">
+        <strong>${week.class_name}</strong>　${week.start_date} 至 ${week.end_date}　
+        状态：${week.status}　待复核：${week.pending_reviews || 0}
+        <div style="margin-top:9px">
+          <button class="secondary review-open" data-batch="${week.batch_id}" type="button">打开复核</button>
+          <button class="primary week-confirm" data-batch="${week.batch_id}" type="button">确认批次</button>
+          <button class="secondary week-export" data-batch="${week.batch_id}" type="button">导出 Excel</button>
+        </div>
+      </div>`).join('');
+    } catch (error) { weeksElement.textContent = `批次读取失败：${error.message}`; }
+  }
+
+  weeksElement.addEventListener('click', async event => {
+    const batchId = event.target.dataset.batch;
+    if (!batchId) return;
+    if (event.target.classList.contains('review-open')) await loadReviews(batchId);
+    if (event.target.classList.contains('week-confirm')) {
+      const response = await fetch(`/api/weeks/${batchId}/confirm`, { method: 'POST' });
+      const body = await response.json();
+      if (!response.ok) { reviewsElement.textContent = body.detail || '确认失败'; return; }
+      reviewsElement.textContent = '批次已确认，可以导出汇总。'; await loadWeeks();
+    }
+    if (event.target.classList.contains('week-export')) {
+      const exportData = new FormData();
+      const template = document.querySelector('#platformTemplate').files[0];
+      if (template) exportData.append('template_file', template);
+      const response = await fetch(`/api/weeks/${batchId}/export`, { method: 'POST', body: exportData });
+      if (!response.ok) { const body = await response.json(); reviewsElement.textContent = body.detail || '导出失败'; return; }
+      const blob = await response.blob();
+      const disposition = response.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename\*=utf-8''([^;]+)/i);
+      const filename = match ? decodeURIComponent(match[1]) : '周汇总.xlsx';
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      reviewsElement.textContent = 'Excel 已导出。';
+    }
+  });
+
+  async function loadReviews(batchId) {
+    const response = await fetch(`/api/weeks/${batchId}/reviews`);
+    const body = await response.json();
+    reviewsElement.dataset.batch = batchId;
+    if (!body.reviews.length) { reviewsElement.textContent = '这个批次没有待复核项。'; return; }
+    reviewsElement.innerHTML = `<h3>待复核（${body.reviews.length}）</h3>` + body.reviews.map(item =>
+      `<div class="review" data-id="${item.id}"><span><img src="/api/observations/${item.id}/image" alt="待复核纸格"><br>${item.subject} · ${item.date} · ${item.student_number}号 ${item.student_name}<br>纸面分类：${item.raw_classification}，置信度 ${item.confidence}</span><span><button class="secondary decision" data-value="submitted">已交</button><button class="secondary decision" data-value="missing">缺交</button></span></div>`
+    ).join('');
+  }
+
+  reviewsElement.addEventListener('click', async event => {
+    if (!event.target.classList.contains('decision')) return;
+    const row = event.target.closest('.review');
+    const response = await fetch(`/api/observations/${row.dataset.id}/review`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({final_status:event.target.dataset.value})
+    });
+    const body = await response.json();
+    if (!response.ok) { alert(body.detail || '复核保存失败'); return; }
+    row.remove(); await loadWeeks();
+  });
+
+  document.querySelector('#refreshWeeks').addEventListener('click', loadWeeks);
+  loadWeeks();
+</script>
+</body>
+</html>
