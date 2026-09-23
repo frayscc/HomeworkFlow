@@ -1,0 +1,118 @@
+name: Build multi-platform release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            data_sep: ";"
+          - os: macos-14
+            platform: macos
+            data_sep: ":"
+          - os: ubuntu-latest
+            platform: linux
+            data_sep: ":"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install and test
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pytest -q
+      - name: Build standalone application
+        run: >-
+          pyinstaller packaging/launcher.py
+          --name HomeworkFlow
+          --noconfirm
+          --clean
+          --onedir
+          --windowed
+          --add-data "frontend/index.html${{ matrix.data_sep }}frontend"
+          --add-data "assets${{ matrix.data_sep }}assets"
+          --collect-all pypdfium2
+      - name: Smoke test Windows application
+        if: matrix.platform == 'windows'
+        run: python packaging/smoke_test.py dist/HomeworkFlow/HomeworkFlow.exe
+      - name: Smoke test macOS application
+        if: matrix.platform == 'macos'
+        run: python packaging/smoke_test.py dist/HomeworkFlow.app/Contents/MacOS/HomeworkFlow
+      - name: Smoke test Linux application
+        if: matrix.platform == 'linux'
+        run: python packaging/smoke_test.py dist/HomeworkFlow/HomeworkFlow
+      - name: Package Windows application
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item -Recurse dist/HomeworkFlow release/HomeworkFlow
+          Compress-Archive -Path release/HomeworkFlow -DestinationPath "release/HomeworkFlow-$version-windows-x64.zip"
+          Remove-Item -Recurse release/HomeworkFlow
+      - name: Package macOS application
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          arch=$(echo "$RUNNER_ARCH" | tr '[:upper:]' '[:lower:]')
+          mkdir -p release
+          ditto -c -k --sequesterRsrc --keepParent dist/HomeworkFlow.app "release/HomeworkFlow-$version-macos-$arch.zip"
+      - name: Package Linux application
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p release
+          tar -czf "release/HomeworkFlow-$version-linux-x64.tar.gz" -C dist HomeworkFlow
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}-${{ runner.arch }}
+          path: release/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create checksums and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cat > RELEASE_NOTES.md <<'EOF'
+          HomeworkFlow 独立运行版，无需预先安装 Python。
+
+          - Windows：下载 `windows-x64.zip`，解压后双击 `HomeworkFlow.exe`。
+          - macOS：下载对应架构的 ZIP，解压后打开 `HomeworkFlow.app`。应用目前未使用 Apple Developer 证书签名，首次启动可能需要在 Finder 中右键选择“打开”。
+          - Linux：下载 `linux-x64.tar.gz`，解压后运行 `HomeworkFlow/HomeworkFlow`。
+
+          程序仅监听本机 `127.0.0.1`，首次启动会自动打开浏览器。学生名单、扫描件和数据库只保存在本机。
+          EOF
+          gh release create "$GITHUB_REF_NAME" \
+            ./*-windows-*.zip ./*-macos-*.zip ./*-linux-*.tar.gz SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "HomeworkFlow ${GITHUB_REF_NAME}" \
+            --notes-file RELEASE_NOTES.md

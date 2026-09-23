@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 import uuid
@@ -203,8 +204,9 @@ def _free_port() -> int:
 
 
 def run() -> None:
-    port = _free_port()
-    threading.Timer(0.8, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
+    port = int(os.environ["HOMEWORKFLOW_PORT"]) if os.environ.get("HOMEWORKFLOW_PORT") else _free_port()
+    if os.environ.get("HOMEWORKFLOW_NO_BROWSER") != "1":
+        threading.Timer(0.8, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
     uvicorn.run(app, host="127.0.0.1", port=port, access_log=False)
 
 
