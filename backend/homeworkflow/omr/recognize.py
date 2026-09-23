@@ -56,7 +56,7 @@ def classify_slot(gray: np.ndarray) -> tuple[str, float, dict[str, float]]:
     h, w = gray.shape
     # Ignore the printed checkbox border plus a small alignment tolerance.  A
     # wider inset prevents sub-pixel perspective jitter from looking like ink.
-    inset = max(2, round(min(h, w) * 0.22))
+    inset = max(2, round(min(h, w) * 0.28))
     inner = gray[inset:h - inset, inset:w - inset]
     ink = inner < 175
     density = int(ink.sum()) / max(1, inner.size)

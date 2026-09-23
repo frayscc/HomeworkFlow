@@ -40,9 +40,8 @@ HomeworkFlow 是从 ScoreFlow 中独立整理出来的“作业周统计”应�
 
 - Windows x64：解压后双击 `HomeworkFlow.exe`。
 - macOS：解压后打开 `HomeworkFlow.app`；未签名版本首次启动可能需要右键选择“打开”。
-- Linux x64：解压后运行 `HomeworkFlow/HomeworkFlow`。
 
-程序数据分别保存在 Windows 的 `%LOCALAPPDATA%\HomeworkFlow`、macOS 的 `~/Library/Application Support/HomeworkFlow` 或 Linux 的 `~/.local/share/HomeworkFlow`。
+程序数据分别保存在 Windows 的 `%LOCALAPPDATA%\HomeworkFlow` 或 macOS 的 `~/Library/Application Support/HomeworkFlow`。
 
 ### 从源码启动
 

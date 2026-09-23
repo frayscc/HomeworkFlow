@@ -19,26 +19,38 @@ def main() -> None:
             "HOMEWORKFLOW_NO_BROWSER": "1",
             "HOMEWORKFLOW_PORT": "18765",
         })
-        process = subprocess.Popen([str(executable)], env=environment)
+        process = subprocess.Popen(
+            [str(executable)], env=environment,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        failure: Exception | None = None
+        ready = False
         try:
             for _ in range(60):
                 if process.poll() is not None:
                     raise RuntimeError(f"packaged application exited with code {process.returncode}")
                 try:
-                    with urllib.request.urlopen("http://127.0.0.1:18765/api/health", timeout=1) as response:
+                    with urllib.request.urlopen("http://127.0.0.1:18765/api/health", timeout=0.5) as response:
                         payload = json.load(response)
                     if payload.get("status") == "ok":
+                        ready = True
                         print(json.dumps(payload))
                         return
-                except Exception:
-                    time.sleep(0.5)
+                except Exception as exc:
+                    failure = exc
+                    time.sleep(0.25)
             raise RuntimeError("packaged application did not become ready")
         finally:
             process.terminate()
             try:
-                process.wait(timeout=10)
+                output, _ = process.communicate(timeout=10)
             except subprocess.TimeoutExpired:
                 process.kill()
+                output, _ = process.communicate()
+            if output:
+                print(output)
+            if failure and not ready:
+                print(f"last health-check error: {failure!r}")
 
 
 if __name__ == "__main__":
