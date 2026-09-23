@@ -232,15 +232,6 @@ class Database:
             ).fetchone()[0]
             if observation_count == 0:
                 raise ValueError("该批次还没有扫描识别结果")
-            missing_subjects = [row[0] for row in connection.execute(
-                """SELECT DISTINCT f.subject FROM homework_forms f
-                   WHERE f.batch_id=? AND f.is_spare=0 AND NOT EXISTS (
-                     SELECT 1 FROM homework_observations o JOIN homework_forms scanned ON scanned.form_id=o.form_id
-                     WHERE o.batch_id=f.batch_id AND scanned.subject=f.subject
-                   )""", (batch_id,)
-            )]
-            if missing_subjects:
-                raise ValueError(f"以下学科还没有扫描结果：{'、'.join(missing_subjects)}")
             if pending:
                 raise ValueError(f"还有 {pending} 项需要人工复核")
             connection.execute("UPDATE homework_weeks SET status='confirmed', confirmed_at=? WHERE batch_id=?",
@@ -267,8 +258,6 @@ class Database:
             week = connection.execute("SELECT * FROM homework_weeks WHERE batch_id=?", (batch_id,)).fetchone()
             if week is None:
                 raise ValueError("周批次不存在")
-            if week["status"] != "confirmed":
-                raise ValueError("周批次确认后才能导出")
             form_row = connection.execute(
                 "SELECT manifest_json FROM homework_forms WHERE batch_id=? ORDER BY is_spare, subject LIMIT 1",
                 (batch_id,),
@@ -277,7 +266,7 @@ class Database:
             dates = [row[0] for row in connection.execute(
                 "SELECT date FROM homework_week_dates WHERE batch_id=? ORDER BY date", (batch_id,)
             )]
-            subjects = [row[0] for row in connection.execute(
+            issued_subjects = [row[0] for row in connection.execute(
                 "SELECT DISTINCT subject FROM homework_forms WHERE batch_id=? AND is_spare=0 ORDER BY form_id",
                 (batch_id,),
             )]
@@ -293,17 +282,27 @@ class Database:
             notes = [dict(row) for row in connection.execute(
                 "SELECT * FROM homework_notes WHERE batch_id=? ORDER BY created_at", (batch_id,)
             )]
+        if not rows:
+            raise ValueError("该批次还没有可查看或导出的扫描结果")
+        observed_subjects = {row["subject"] for row in rows}
+        subjects = [subject for subject in issued_subjects if subject in observed_subjects]
         grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
         for row in rows:
             item = dict(row)
             grouped.setdefault((item["subject"], item["student_number"], item["date"]), []).append(item)
         results = []
         for (subject, number, item_date), items in grouped.items():
-            final_status = "submitted" if any(item["final_status"] == "submitted" for item in items) else "missing"
+            if any(item["final_status"] == "submitted" for item in items):
+                final_status = "submitted"
+            elif any(item["final_status"] is None for item in items):
+                final_status = "review"
+            else:
+                final_status = "missing"
             results.append({
                 "subject": subject, "student_number": number, "student_name": items[0]["student_name"],
                 "date": item_date, "final_status": final_status,
                 "raw_classifications": ",".join(sorted({item["raw_classification"] for item in items})),
             })
         return {"week": dict(week), "students": students, "dates": dates, "subjects": subjects,
+                "issued_subjects": issued_subjects,
                 "results": results, "notes": notes}

@@ -25,9 +25,9 @@ from .roster import Roster, Student
 FONT_NAME = "NotoSansSC"
 A5_WIDTH_MM = 210.0
 A5_HEIGHT_MM = 148.5
-DEFAULT_SUBJECTS = ("语文", "数学", "英语", "物理", "道法", "政治", "历史")
+DEFAULT_SUBJECTS = ("语文", "数学", "英语", "物理", "道法", "历史", "生物", "地理")
 SUBJECT_CODES = {"语文": "CHI", "数学": "MAT", "英语": "ENG", "物理": "PHY",
-                 "道法": "MOR", "政治": "POL", "历史": "HIS"}
+                 "道法": "MOR", "历史": "HIS", "生物": "BIO", "地理": "GEO"}
 WEEKDAY_LABELS = "一二三四五六日"
 
 
@@ -281,4 +281,3 @@ def generate_weekly_packet(output_pdf: Path, output_manifest: Path, *, roster: R
     }
     output_manifest.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
     return bundle
-

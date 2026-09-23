@@ -9,10 +9,18 @@ import numpy as np
 CLASSES = ("blank", "slash_forward", "slash_back", "x", "review")
 
 
+def _normalize_illumination(gray: np.ndarray) -> np.ndarray:
+    sigma = max(3.0, min(gray.shape[:2]) / 18)
+    background = cv2.GaussianBlur(gray, (0, 0), sigmaX=sigma, sigmaY=sigma)
+    return cv2.divide(gray, np.maximum(background, 1), scale=255)
+
+
 def align_with_markers(image: np.ndarray, manifest: dict[str, Any]) -> np.ndarray:
     """Align one already-cropped A5 form using its four solid corner markers."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
-    binary = cv2.threshold(gray, 90, 255, cv2.THRESH_BINARY_INV)[1]
+    normalized = _normalize_illumination(gray)
+    binary = cv2.threshold(normalized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     height, width = gray.shape
     candidates = []
@@ -58,7 +66,11 @@ def classify_slot(gray: np.ndarray) -> tuple[str, float, dict[str, float]]:
     # wider inset prevents sub-pixel perspective jitter from looking like ink.
     inset = max(2, round(min(h, w) * 0.28))
     inner = gray[inset:h - inset, inset:w - inset]
-    ink = inner < 175
+    normalized = _normalize_illumination(inner)
+    if float(np.percentile(inner, 90)) < 85:
+        ink = np.ones(inner.shape, dtype=bool)
+    else:
+        ink = normalized < 185
     density = int(ink.sum()) / max(1, inner.size)
     yy, xx = np.indices(inner.shape)
     tolerance = max(1.5, inner.shape[0] * 0.12)
@@ -91,4 +103,4 @@ def recognize_slots(image: np.ndarray, manifest: dict[str, Any]) -> dict[str, An
         observations.append({"slot_id": slot["slot_id"], "classification": classification,
                              "confidence": round(confidence, 4), "features": features})
     counts = {name: sum(item["classification"] == name for item in observations) for name in CLASSES}
-    return {"algorithm_version": "homework-prototype-1", "counts": counts, "observations": observations}
+    return {"algorithm_version": "homework-photo-2", "counts": counts, "observations": observations}

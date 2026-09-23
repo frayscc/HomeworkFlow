@@ -79,21 +79,87 @@ def decode_document(content: bytes, filename: str) -> list[np.ndarray]:
 
 
 def _qr_count(image: np.ndarray) -> int:
-    detector = cv2.QRCodeDetector()
-    try:
-        ok, decoded, _, _ = detector.detectAndDecodeMulti(image)
-        return sum(bool(value) for value in decoded) if ok else 0
-    except cv2.error:
-        return 0
+    current = image
+    for _ in range(4):
+        detector = cv2.QRCodeDetector()
+        try:
+            ok, decoded, _, _ = detector.detectAndDecodeMulti(current)
+            count = sum(bool(value) for value in decoded) if ok else 0
+            if count:
+                return count
+        except cv2.error:
+            pass
+        payload, _ = _decode_qr(current)
+        if payload:
+            return 1
+        current = cv2.rotate(current, cv2.ROTATE_90_CLOCKWISE)
+    return 0
+
+
+def _ordered_corners(points: np.ndarray) -> np.ndarray:
+    points = points.reshape(4, 2).astype(np.float32)
+    total = points.sum(axis=1)
+    difference = np.diff(points, axis=1).reshape(-1)
+    return np.array([points[np.argmin(total)], points[np.argmin(difference)],
+                     points[np.argmax(total)], points[np.argmax(difference)]], dtype=np.float32)
+
+
+def rectify_photographed_page(image: np.ndarray) -> np.ndarray:
+    """Find the paper boundary in a phone photo and flatten it by perspective."""
+    original_height, original_width = image.shape[:2]
+    scale = min(1.0, 1800 / max(original_height, original_width))
+    work = image if scale == 1.0 else cv2.resize(image, None, fx=scale, fy=scale,
+                                                interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(work, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 35, 110)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8), iterations=2)
+    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    page_area = work.shape[0] * work.shape[1]
+    quadrilateral = None
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:20]:
+        if cv2.contourArea(contour) < page_area * 0.18:
+            break
+        perimeter = cv2.arcLength(contour, True)
+        polygon = cv2.approxPolyDP(contour, 0.025 * perimeter, True)
+        if len(polygon) == 4 and cv2.isContourConvex(polygon):
+            quadrilateral = polygon.reshape(4, 2).astype(np.float32) / scale
+            break
+    if quadrilateral is None:
+        return image
+    top_left, top_right, bottom_right, bottom_left = _ordered_corners(quadrilateral)
+    width = max(np.linalg.norm(top_right - top_left), np.linalg.norm(bottom_right - bottom_left))
+    height = max(np.linalg.norm(bottom_left - top_left), np.linalg.norm(bottom_right - top_right))
+    if min(width, height) < 300:
+        return image
+    output_scale = min(2.0, 2400 / max(width, height))
+    target_width, target_height = round(width * output_scale), round(height * output_scale)
+    destination = np.array([[0, 0], [target_width - 1, 0],
+                            [target_width - 1, target_height - 1], [0, target_height - 1]], dtype=np.float32)
+    transform = cv2.getPerspectiveTransform(
+        np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32), destination
+    )
+    return cv2.warpPerspective(image, transform, (target_width, target_height),
+                               borderValue=(255, 255, 255))
 
 
 def split_a4_pages(pages: Iterable[np.ndarray]) -> list[np.ndarray]:
     """Split portrait A4 scans into two landscape A5 forms; pass A5 scans through."""
     forms = []
-    for image in pages:
+    for source in pages:
+        image = rectify_photographed_page(source)
         height, width = image.shape[:2]
+        qr_count = _qr_count(image)
+        if height > width * 1.15 and qr_count == 1:
+            midpoint = height // 2
+            half_count = int(_qr_count(image[:midpoint]) > 0) + int(_qr_count(image[midpoint:]) > 0)
+            if half_count == 2:
+                qr_count = 2
+        if qr_count == 1:
+            forms.append(image.copy())
+            continue
         is_portrait_a4 = height > width * 1.15
-        if not is_portrait_a4 and _qr_count(image) >= 2:
+        if not is_portrait_a4 and qr_count >= 2:
             image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
             height, width = image.shape[:2]
             is_portrait_a4 = height > width

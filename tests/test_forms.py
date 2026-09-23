@@ -21,7 +21,9 @@ def test_weekdays_and_page_pairing(tmp_path):
     assert len(PdfReader(str(pdf)).pages) == 4
     assert len(result["forms"]) == 8
     assert sum(not form["is_spare"] for form in result["forms"]) == len(DEFAULT_SUBJECTS)
-    assert sum(form["is_spare"] for form in result["forms"]) == 1
+    assert sum(form["is_spare"] for form in result["forms"]) == 0
+    assert "政治" not in DEFAULT_SUBJECTS
+    assert "生物" in DEFAULT_SUBJECTS and "地理" in DEFAULT_SUBJECTS
     assert all(len(form["slots"]) == 49 * 5 for form in result["forms"])
 
 
@@ -32,4 +34,3 @@ def test_more_than_five_dates_requires_split():
         assert "最多容纳 5 个日期" in str(exc)
     else:
         raise AssertionError("six weekdays were accepted")
-

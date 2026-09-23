@@ -65,3 +65,25 @@ def test_platform_template_controls_columns(tmp_path):
     workbook = build_workbook(data, stream.getvalue())
     assert [cell.value for cell in workbook["平台导入"][1]] == ["学生姓名", "作业日期", "科目", "自定义列"]
     assert [cell.value for cell in workbook["平台导入"][2]] == ["学生甲", "2026-09-28", "数学", ""]
+
+
+def test_partial_subjects_can_be_viewed_exported_and_confirmed(tmp_path):
+    roster = Roster("部分扫描班", (Student("01", "张三"),))
+    pdf, manifest = tmp_path / "partial.pdf", tmp_path / "partial.manifest.json"
+    bundle = generate_weekly_packet(pdf, manifest, roster=roster,
+                                    start=date(2026, 9, 28), end=date(2026, 9, 28),
+                                    subjects=("数学", "英语"))
+    db = Database(tmp_path / "partial.sqlite3")
+    db.register_bundle(bundle, pdf, manifest)
+    math_form = next(form for form in bundle["forms"] if form["subject"] == "数学")
+    db.record_import("partial-import", "math.jpg", tmp_path / "math.jpg", [{
+        "batch_id": bundle["batch_id"], "form_id": math_form["form_id"],
+        "observations": [{"slot_id": "r00-d0", "student_number": "01", "student_name": "张三",
+                          "date": "2026-09-28", "classification": "blank", "confidence": 0.96,
+                          "features": {"ink_density": 0.0}}],
+    }])
+    report = db.report_data(bundle["batch_id"])
+    assert report["subjects"] == ["数学"]
+    assert set(report["issued_subjects"]) == {"数学", "英语"}
+    export_week_xlsx(tmp_path / "partial.xlsx", report)
+    assert db.confirm_week(bundle["batch_id"])["status"] == "confirmed"

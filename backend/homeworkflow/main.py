@@ -58,7 +58,8 @@ def health() -> dict[str, str]:
 
 @app.get("/api/config")
 def config() -> dict[str, object]:
-    return {"subjects": list(DEFAULT_SUBJECTS), "max_dates": 5, "max_students": 49}
+    return {"subjects": list(DEFAULT_SUBJECTS), "max_dates": 5, "max_students": 49,
+            "data_dir": str(data_dir())}
 
 
 @app.post("/api/roster/preview")
@@ -152,6 +153,26 @@ def list_weeks() -> dict[str, object]:
 @app.get("/api/weeks/{batch_id}/reviews")
 def pending_reviews(batch_id: str) -> dict[str, object]:
     return {"reviews": database().pending_reviews(batch_id)}
+
+
+@app.get("/api/weeks/{batch_id}/results")
+def week_results(batch_id: str) -> dict[str, object]:
+    try:
+        report = database().report_data(batch_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    summary = []
+    for subject in report["subjects"]:
+        items = [item for item in report["results"] if item["subject"] == subject]
+        summary.append({
+            "subject": subject,
+            "submitted": sum(item["final_status"] == "submitted" for item in items),
+            "missing": sum(item["final_status"] == "missing" for item in items),
+            "review": sum(item["final_status"] == "review" for item in items),
+        })
+    return {"week": report["week"], "subjects": report["subjects"],
+            "issued_subjects": report["issued_subjects"], "summary": summary,
+            "missing": [item for item in report["results"] if item["final_status"] == "missing"]}
 
 
 @app.post("/api/observations/{observation_id}/review")

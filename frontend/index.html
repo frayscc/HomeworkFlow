@@ -97,6 +97,7 @@
     </div>
     <label for="platformTemplate" style="margin-top:16px">平台导入模板（可选，读取第一行列名）</label>
     <input id="platformTemplate" type="file" accept=".xlsx" />
+    <p id="storagePath" class="hint"></p>
     <div id="weeks" style="margin-top:14px;color:#4e586a">正在读取批次…</div>
     <div id="reviews"></div>
   </section>
@@ -130,6 +131,7 @@
     document.querySelector('#subjects').innerHTML = config.subjects.map(subject =>
       `<label class="subject"><input type="checkbox" value="${subject}" checked />${subject}</label>`
     ).join('');
+    document.querySelector('#storagePath').textContent = `数据保存位置：${config.data_dir}`;
   });
 
   document.querySelector('#previewRoster').addEventListener('click', async () => {
@@ -208,6 +210,7 @@
         状态：${week.status}　待复核：${week.pending_reviews || 0}
         <div style="margin-top:9px">
           <button class="secondary review-open" data-batch="${week.batch_id}" type="button">打开复核</button>
+          <button class="secondary results-open" data-batch="${week.batch_id}" type="button">查看当前结果</button>
           <button class="primary week-confirm" data-batch="${week.batch_id}" type="button">确认批次</button>
           <button class="secondary week-export" data-batch="${week.batch_id}" type="button">导出 Excel</button>
         </div>
@@ -219,6 +222,7 @@
     const batchId = event.target.dataset.batch;
     if (!batchId) return;
     if (event.target.classList.contains('review-open')) await loadReviews(batchId);
+    if (event.target.classList.contains('results-open')) await loadResults(batchId);
     if (event.target.classList.contains('week-confirm')) {
       const response = await fetch(`/api/weeks/${batchId}/confirm`, { method: 'POST' });
       const body = await response.json();
@@ -241,6 +245,18 @@
       reviewsElement.textContent = 'Excel 已导出。';
     }
   });
+
+  async function loadResults(batchId) {
+    const response = await fetch(`/api/weeks/${batchId}/results`);
+    const body = await response.json();
+    if (!response.ok) { reviewsElement.textContent = body.detail || '结果读取失败'; return; }
+    const unscanned = body.issued_subjects.filter(subject => !body.subjects.includes(subject));
+    reviewsElement.innerHTML = `<h3>当前扫描结果</h3>
+      <p>已扫描：${body.subjects.join('、') || '无'}${unscanned.length ? `；尚未扫描：${unscanned.join('、')}` : ''}</p>
+      ${body.summary.map(item => `<div class="week"><strong>${item.subject}</strong>　已交 ${item.submitted}　缺交 ${item.missing}　待复核 ${item.review}</div>`).join('')}
+      <h4>缺交明细（${body.missing.length}）</h4>
+      ${body.missing.slice(0, 200).map(item => `<div>${item.date}　${item.subject}　${item.student_number}号 ${item.student_name}</div>`).join('')}`;
+  }
 
   async function loadReviews(batchId) {
     const response = await fetch(`/api/weeks/${batchId}/reviews`);
